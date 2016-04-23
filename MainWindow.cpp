@@ -14,16 +14,13 @@ MainWindow::MainWindow(QWidget *parent) :
 	QStringList headers;
 	headers << tr("Tree") << tr("Value") << tr("Index");
 
-	quint32 indexColumn = 2;
-
+	// Исходная модель
 	m_treeModel = new TreeModel(headers, this);
+
+	// Сортируемая прокси модель
 	m_proxyModel = new QSortFilterProxyModel(this);
 
-	m_proxyModel->setSourceModel(m_treeModel);
-	m_proxyModel->sort(indexColumn, Qt::AscendingOrder);
-
 	ui->treeView->setModel(m_proxyModel);
-	ui->treeView->hideColumn(indexColumn);
 }
 
 MainWindow::~MainWindow()
@@ -33,6 +30,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_action_Load_model_from_file_triggered()
 {
+	// Здесь вызывается диалог пользователя, в котором он выбирает необходимый файл
 	QFileDialog dialog(this);
 	dialog.setAcceptMode(QFileDialog::AcceptOpen);
 
@@ -53,6 +51,13 @@ void MainWindow::on_action_Load_model_from_file_triggered()
 								  QMessageBox::NoButton);
 
 		}
+
+		quint32 indexColumn = 2;
+		m_proxyModel->sort(indexColumn, Qt::AscendingOrder);
+		m_proxyModel->setSourceModel(m_treeModel);
+
+		// Прячем колонку с индексами
+		ui->treeView->hideColumn(indexColumn);
 	}
 }
 

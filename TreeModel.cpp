@@ -25,36 +25,15 @@ QVariant TreeModel::headerData(int section, Qt::Orientation orientation, int rol
 	return QVariant();
 }
 
-bool TreeModel::setHeaderData(int section, Qt::Orientation orientation, const QVariant& value, int role)
-{
-	if (orientation != Qt::Horizontal
-			|| role != Qt::EditRole) {
-		return false;
-	}
-
-	bool result = m_root->setData(section, value);
-
-	if (result) {
-		emit headerDataChanged(orientation, section, section);
-	}
-
-	return result;
-}
-
 QModelIndex TreeModel::index(int row, int column, const QModelIndex &parent) const
 {
-	// TODO
 	if (parent.isValid() && parent.column() != 0) {
 		return QModelIndex();
 	}
 
-	if (!hasIndex(row, column, parent)) {
-		return QModelIndex();
-	}
+	TreeItem* parentItem = getItem(parent);
 
-	TreeItem *parentItem = getItem(parent);
-
-	TreeItem *childItem = parentItem->child(row);
+	TreeItem* childItem = parentItem->child(row);
 	if (childItem) {
 		return createIndex(row, column, childItem);
 	}
@@ -76,7 +55,7 @@ QModelIndex TreeModel::parent(const QModelIndex &index) const
 		return QModelIndex();
 	}
 
-	return createIndex(parentItem->row(), 0, parentItem);
+	return createIndex(parentItem->childCount(), 0, parentItem);
 }
 
 int TreeModel::rowCount(const QModelIndex &parent) const
@@ -97,7 +76,7 @@ Qt::ItemFlags TreeModel::flags(const QModelIndex& index) const
 		return 0;
 	}
 
-	return Qt::ItemIsEditable | QAbstractItemModel::flags(index);
+	return QAbstractItemModel::flags(index);
 }
 
 QVariant TreeModel::data(const QModelIndex &index, int role) const
@@ -109,7 +88,6 @@ QVariant TreeModel::data(const QModelIndex &index, int role) const
 	TreeItem *item = getItem(index);
 
 	switch (role) {
-		case Qt::EditRole:
 		case Qt::DisplayRole:
 			return item->data(index.column());
 		default:
@@ -119,72 +97,9 @@ QVariant TreeModel::data(const QModelIndex &index, int role) const
 	return QVariant();
 }
 
-bool TreeModel::setData(const QModelIndex& index, const QVariant& value, int role)
-{
-	if (role != Qt::EditRole) {
-		return false;
-	}
-
-	TreeItem *item = getItem(index);
-	bool result = item->setData(index.column(), value);
-
-	if (result) {
-		emit dataChanged(index, index);
-	}
-
-	return result;
-}
-
-bool TreeModel::insertColumns(int position, int columns, const QModelIndex& parent)
-{
-	bool success;
-
-	beginInsertColumns(parent, position, position + columns - 1);
-	success = m_root->insertColumns(position, columns);
-	endInsertColumns();
-
-	return success;
-}
-
-bool TreeModel::TreeModel::insertRows(int position, int rows, const QModelIndex& parent)
-{
-	TreeItem *parentItem = getItem(parent);
-	bool success;
-
-	beginInsertRows(parent, position, position + rows - 1);
-	success = parentItem->insertChildren(position, rows, m_root->columnCount());
-	endInsertRows();
-
-	return success;
-}
-
-bool TreeModel::removeColumns(int position, int columns, const QModelIndex& parent)
-{
-	bool success;
-
-	beginRemoveColumns(parent, position, position + columns - 1);
-	success = m_root->removeColumns(position, columns);
-	endRemoveColumns();
-
-	if (m_root->columnCount() == 0) {
-		removeRows(0, rowCount());
-	}
-
-	return success;
-}
-
-bool TreeModel::removeRows(int position, int rows, const QModelIndex& parent)
-{
-	TreeItem *parentItem = getItem(parent);
-	bool success = true;
-
-	beginRemoveRows(parent, position, position + rows - 1);
-	success = parentItem->removeChildren(position, rows);
-	endRemoveRows();
-
-	return success;
-}
-
+/**
+  * Комментарии на английском языке - оригинал.
+ */
 QModelIndexList TreeModel::match(const QModelIndex& start, int role, const QVariant& value, int hits, Qt::MatchFlags flags) const
 {
 	QModelIndexList result;
@@ -202,7 +117,11 @@ QModelIndexList TreeModel::match(const QModelIndex& start, int role, const QVari
 	for (int i = 0; (wrap && i < 2) || (!wrap && i < 1); ++i) {
 		for (int r = from; (r < to) && (allHits || result.count() < hits); ++r) {
 			QModelIndex idx = index(r, start.column(), p);
+
+			// Добавляем дополнительный индекс, относительно которого
+			// построим рекурсивный обход
 			QModelIndex hierarh_idx = index(r, 0, p);
+
 			if (!idx.isValid())
 				continue;
 			QVariant v = data(idx, role);
@@ -241,6 +160,7 @@ QModelIndexList TreeModel::match(const QModelIndex& start, int role, const QVari
 							result.append(idx);
 				}
 			}
+			// В следующих двух строках изменяем idx на hierarh_idx
 			if (recurse && hasChildren(hierarh_idx)) { // search the hierarchy
 				result += match(index(0, idx.column(), hierarh_idx), role,
 								(text.isEmpty() ? value : text),
@@ -256,48 +176,80 @@ QModelIndexList TreeModel::match(const QModelIndex& start, int role, const QVari
 
 void TreeModel::addOperation(quint32 idHex, const QStringList& treePath, const qreal& value)
 {
-	// 0xabcdef - представление числа
+	// 0xabcdef - представление числа - уникального индекса idHex
+
+	// Для листов дерева индекс самый маленький
 	quint32 ef = idHex & 0x0000ff;
+	// Для средних узлов - побольше
 	quint32 cd = (idHex) & 0x00ff00;
+	// Самый большой индекс для узлов верхнего уровня
 	quint32 ab = (idHex) & 0xff0000;
 
+	// Номера колонок
 	qint32 titleColumn = 0;
 	qint32 valueColumn = 1;
 	qint32 indexColumn = 2;
 
-
 	TreeItem* parentItem = getItem(QModelIndex());
+
 	beginInsertRows(QModelIndex(), 0, parentItem->childCount());
 
+	// Смотрим, есть ли верхний узел с таким же индексом
 	QModelIndexList items = match(this->index(0, indexColumn), Qt::DisplayRole, ab, -1, Qt::MatchRecursive);
 	if (items.isEmpty()) {
 
+		// Если такого узла нет, то вставляем новый узел
 		parentItem->insertChildren(parentItem->childCount(), 1, 3);
-		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, ab); // insert id for address
-		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(0)); // insert name for address
+
+		// Вставляем индекс для самого верхнего узла (адрес)
+		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, ab);
+		// Вставляем имя узла
+		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(0));
+
+		// Изменяем текущего родителя на только что созданного потомка
 		parentItem = parentItem->child(parentItem->childCount() - 1);
+
 	} else {
+		// Если такой узел есть, то изменяем родителя на него
 		parentItem = parentItem->child(items.at(0).row());
 	}
 
+	// Далее аналогичные шаги для узлов среднего уровня
 	items = match(this->index(0,indexColumn), Qt::DisplayRole, cd, -1, Qt::MatchRecursive);
 
 	if (items.isEmpty()) {
+
+		// Если такого узла нет, то вставляем новый узел
 		parentItem->insertChildren(parentItem->childCount(), 1, 3);
-		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, cd); // insert id for node
-		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(1)); // insert name for node
+
+		// Вставляем индекс
+		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, cd);
+		// Вставляем имя узла
+		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(1));
+
+		// Изменяем текущего родителя на только что созданного потомка
 		parentItem = parentItem->child(parentItem->childCount() - 1);
+
 	} else {
+		// Если такой узел есть, то изменяем родителя на него
 		parentItem = parentItem->child(items.at(0).row());
 	}
 
+	// Если файл составлен корректно и все номера узлов уникальны, то
+	// match должен вернуть пустой список индексов.
+	// В противном случае, повторный узел мы не вставляем
 	items = match(this->index(0,indexColumn), Qt::DisplayRole, ef, -1, Qt::MatchRecursive);
 
 	if (items.isEmpty()) {
+		// Вставляем новый узел
 		parentItem->insertChildren(parentItem->childCount(), 1, 3);
-		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, ef); // insert id for operation
-		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(2)); // insert name for operation
-		parentItem->child(parentItem->childCount() - 1)->setData(valueColumn, value); // insert value for operation
+
+		// Вставляем индекс
+		parentItem->child(parentItem->childCount() - 1)->setData(indexColumn, ef);
+		// Вставляем имя узла
+		parentItem->child(parentItem->childCount() - 1)->setData(titleColumn, treePath.at(2));
+		// Вставляем значение узла узла
+		parentItem->child(parentItem->childCount() - 1)->setData(valueColumn, value);
 	}
 
 	endInsertRows();

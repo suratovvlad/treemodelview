@@ -1,0 +1,6 @@
+0x020304;Address2/Node3/Operation4;100
+0x020303;Address2/Node3/Operation3;200
+0x020201;Address2/Node2/Operation1;300.78
+0xffffff;Addressff/Nodeff/Operationff;345234.23
+0xfffffe;Addressff/Nodeff/Operationfe;234.23
+0xfffffd;Addressff/Nodeff/Operationfd;2.23
